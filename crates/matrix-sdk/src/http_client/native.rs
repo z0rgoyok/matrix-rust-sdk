@@ -250,6 +250,11 @@ pub(super) async fn execute_request(
     timeout: Option<Duration>,
     send_progress: SharedObservable<TransmissionProgress>,
 ) -> Result<http::Response<Bytes>, HttpError> {
+    #[cfg(feature = "tich-connect-transport")]
+    if super::tich_connect::handles(request) {
+        return super::tich_connect::send(request, timeout, send_progress).await;
+    }
+
     use std::convert::Infallible;
 
     use futures_util::stream;

@@ -66,6 +66,12 @@ pub type RumaApiError = UiaaResponse;
 /// converting the raw HTTP response into a Matrix response.
 #[derive(Error, Debug)]
 pub enum HttpError {
+    /// The CDN transport failed. The write outcome may be unknown, so the HTTP
+    /// retry loop must not start another operation with a new identifier.
+    #[cfg(feature = "tich-connect-transport")]
+    #[error("Tich Connect transport: {0}")]
+    ConnectTransport(&'static str),
+
     /// Error at the HTTP layer.
     #[error(transparent)]
     Reqwest(#[from] ReqwestError),

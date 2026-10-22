@@ -255,7 +255,8 @@ fn build_library() -> Result<()> {
     create_dir_all(ffi_directory.as_path())?;
 
     let sh = sh();
-    cmd!(sh, "rustup run stable cargo build -p matrix-sdk-ffi --features {FFI_FEATURES}").run()?;
+    let toolchain = std::env::var("TICH_RUST_TOOLCHAIN").unwrap_or_else(|_| "stable".into());
+    cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi --features {FFI_FEATURES}").run()?;
 
     rename(lib_output_dir.join(FFI_LIBRARY_NAME), ffi_directory.join(FFI_LIBRARY_NAME))?;
     let swift_directory = root_directory.join("bindings/apple/generated/swift");
@@ -405,6 +406,8 @@ fn build_targets(
 ) -> Result<HashMap<Platform, Vec<Utf8PathBuf>>> {
     let sh = sh();
 
+    let toolchain = std::env::var("TICH_RUST_TOOLCHAIN").unwrap_or_else(|_| "stable".into());
+
     // Note: `push_env` stores environment variables and returns a RAII guard
     // that will restore the environment variable to its previous value when
     // dropped.
@@ -424,7 +427,7 @@ fn build_targets(
 
             println!("-- Building for {}", target.description);
             if target.status == TargetStatus::TopTier {
-                cmd!(sh, "rustup run stable cargo build -p matrix-sdk-ffi --target {triple} --profile {profile} --features {FFI_FEATURES}")
+                cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi --target {triple} --profile {profile} --features {FFI_FEATURES}")
                     .run()?;
             } else {
                 cmd!(sh, "rustup run nightly cargo build -p matrix-sdk-ffi -Zbuild-std --target {triple} --profile {profile} --features {FFI_FEATURES}")
@@ -437,7 +440,7 @@ fn build_targets(
 
         if !stable_targets.is_empty() {
             let triples = stable_targets.iter().map(|target| target.triple).collect::<Vec<_>>();
-            let mut cmd = cmd!(sh, "rustup run stable cargo build -p matrix-sdk-ffi");
+            let mut cmd = cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi");
             for triple in &triples {
                 cmd = cmd.arg("--target").arg(triple);
             }
