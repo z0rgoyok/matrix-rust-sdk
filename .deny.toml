@@ -9,6 +9,7 @@ exclude = [
 [advisories]
 version = 2
 ignore = [
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml is build-time only through Askama in UniFFI; no patched upstream release, only trusted repository configuration is parsed. Revisit on UniFFI upgrade." },
     { id = "RUSTSEC-2024-0388", reason = "Unmaintained derivative crate, not a direct dependency" },
 ]
 
