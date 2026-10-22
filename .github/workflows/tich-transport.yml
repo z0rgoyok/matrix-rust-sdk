@@ -13,6 +13,8 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_BUILD_JOBS: 4
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.98.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
       - run: cargo test --locked -p matrix-sdk --lib --features tich-connect-transport http_client::tich_connect::tests
