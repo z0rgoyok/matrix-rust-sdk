@@ -1,0 +1,21 @@
+name: Tich Connect transport
+on:
+  pull_request:
+    branches: [tich/main]
+  push:
+    branches: [tich/main]
+permissions:
+  contents: read
+jobs:
+  transport:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_BUILD_JOBS: 4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@5059963b1731bf1580991b5f3b1eecfb5da406c0 # 1.98.0
+      - run: cargo test --locked -p matrix-sdk --lib --features tich-connect-transport http_client::tich_connect::tests
+      - run: cargo test --locked -p matrix-sdk --features tich-connect-transport --test tich_connect_live

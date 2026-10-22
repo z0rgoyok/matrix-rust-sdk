@@ -9,6 +9,8 @@ on:
 
 jobs:
   benchmarks:
+    # Upstream CodSpeed integration is not configured in product forks.
+    if: ${{ github.repository == 'matrix-org/matrix-rust-sdk' || github.event_name == 'workflow_dispatch' }}
     name: Run Benchmarks
     runs-on: ubuntu-latest
     permissions:
