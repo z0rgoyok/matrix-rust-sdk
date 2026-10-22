@@ -256,7 +256,7 @@ fn build_library() -> Result<()> {
 
     let sh = sh();
     let toolchain = std::env::var("TICH_RUST_TOOLCHAIN").unwrap_or_else(|_| "stable".into());
-    cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi --features {FFI_FEATURES}").run()?;
+    cmd!(sh, "rustup run {toolchain} cargo build --locked -p matrix-sdk-ffi --features {FFI_FEATURES}").run()?;
 
     rename(lib_output_dir.join(FFI_LIBRARY_NAME), ffi_directory.join(FFI_LIBRARY_NAME))?;
     let swift_directory = root_directory.join("bindings/apple/generated/swift");
@@ -427,10 +427,10 @@ fn build_targets(
 
             println!("-- Building for {}", target.description);
             if target.status == TargetStatus::TopTier {
-                cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi --target {triple} --profile {profile} --features {FFI_FEATURES}")
+                cmd!(sh, "rustup run {toolchain} cargo build --locked -p matrix-sdk-ffi --target {triple} --profile {profile} --features {FFI_FEATURES}")
                     .run()?;
             } else {
-                cmd!(sh, "rustup run nightly cargo build -p matrix-sdk-ffi -Zbuild-std --target {triple} --profile {profile} --features {FFI_FEATURES}")
+                cmd!(sh, "rustup run nightly cargo build --locked -p matrix-sdk-ffi -Zbuild-std --target {triple} --profile {profile} --features {FFI_FEATURES}")
                     .run()?;
             }
         }
@@ -440,7 +440,7 @@ fn build_targets(
 
         if !stable_targets.is_empty() {
             let triples = stable_targets.iter().map(|target| target.triple).collect::<Vec<_>>();
-            let mut cmd = cmd!(sh, "rustup run {toolchain} cargo build -p matrix-sdk-ffi");
+            let mut cmd = cmd!(sh, "rustup run {toolchain} cargo build --locked -p matrix-sdk-ffi");
             for triple in &triples {
                 cmd = cmd.arg("--target").arg(triple);
             }
@@ -452,7 +452,7 @@ fn build_targets(
 
         if !tier3_targets.is_empty() {
             let triples = tier3_targets.iter().map(|target| target.triple).collect::<Vec<_>>();
-            let mut cmd = cmd!(sh, "rustup run nightly cargo build -p matrix-sdk-ffi -Zbuild-std");
+            let mut cmd = cmd!(sh, "rustup run nightly cargo build --locked -p matrix-sdk-ffi -Zbuild-std");
             for triple in &triples {
                 cmd = cmd.arg("--target").arg(triple);
             }
