@@ -33,10 +33,15 @@ fn failure(message: &'static str) -> HttpError {
 
 pub(super) fn handles(request: &Request<Bytes>) -> bool {
     let uri = request.uri();
+    let path = uri.path();
+    let is_rendezvous = path.starts_with("/_synapse/client/rendezvous/");
+    let is_matrix = path.starts_with("/_matrix/client/") || path.starts_with("/_matrix/media/");
+    let is_auth = path.starts_with("/auth/");
     uri.scheme_str() == Some("https")
         && uri.authority().is_some_and(|a| a.as_str() == "connect.tich.app")
-        && [Method::POST, Method::PUT, Method::PATCH, Method::DELETE].contains(request.method())
-        && (uri.path().starts_with("/_matrix/client/") || uri.path().starts_with("/_matrix/media/"))
+        && (([Method::POST, Method::PUT, Method::PATCH, Method::DELETE].contains(request.method())
+            && (is_matrix || is_auth || is_rendezvous))
+            || (request.method() == Method::GET && is_rendezvous))
 }
 
 fn nonce() -> Result<String> {
@@ -69,7 +74,7 @@ async fn packet(
 ) -> Result<(u16, Bytes)> {
     for attempt in 0..3 {
         let mut request = client()?
-            .get(format!("{origin}/_connect/v1/{action}?n={}", nonce()?))
+            .get(format!("{origin}/auth/_connect/v1/{action}?n={}", nonce()?))
             .header("X-Connect-Version", "1")
             .header("X-Connect-Id", id)
             .header("Cache-Control", "no-store");
@@ -143,8 +148,16 @@ fn decode(id: &str, body: &[u8]) -> Result<Response<Bytes>> {
     let mut response =
         Response::builder().status(envelope.status).header("cache-control", "no-store");
     for (name, value) in envelope.headers {
-        if ["content-type", "retry-after", "www-authenticate"]
-            .contains(&name.to_ascii_lowercase().as_str())
+        if [
+            "content-type",
+            "etag",
+            "expires",
+            "last-modified",
+            "location",
+            "retry-after",
+            "www-authenticate",
+        ]
+        .contains(&name.to_ascii_lowercase().as_str())
         {
             if value.len() > 4096 {
                 return Err(failure("response header exceeds limit"));
@@ -200,7 +213,7 @@ async fn send_to(
         .as_millis();
     let id = format!("{millis:016x}-{}", nonce()?);
     let mut headers = BTreeMap::new();
-    for name in ["authorization", "content-type"] {
+    for name in ["accept", "authorization", "content-type", "if-match", "if-none-match"] {
         if let Some(value) = request.headers().get(name) {
             headers.insert(name, value.to_str().map_err(|_| failure("invalid request header"))?);
         }
@@ -287,7 +300,11 @@ mod tests {
         for (method, url, expected) in [
             ("POST", "https://connect.tich.app/_matrix/client/v3/login", true),
             ("PUT", "https://connect.tich.app/_matrix/media/v3/upload", true),
+            ("GET", "https://connect.tich.app/_synapse/client/rendezvous/abc", true),
+            ("PUT", "https://connect.tich.app/_synapse/client/rendezvous/abc", true),
+            ("POST", "https://connect.tich.app/auth/register", true),
             ("GET", "https://connect.tich.app/_matrix/client/versions", false),
+            ("GET", "https://connect.tich.app/auth/authorize", false),
             ("POST", "https://other.example/_matrix/client/v3/login", false),
             ("POST", "http://connect.tich.app/_matrix/client/v3/login", false),
             ("POST", "https://connect.tich.app/_synapse/admin/v1/users", false),
@@ -316,12 +333,12 @@ mod tests {
     fn reply(request: &wiremock::Request) -> ResponseTemplate {
         let id = request.headers["x-connect-id"].to_str().unwrap();
         let payload = match request.url.path() {
-            "/_connect/v1/begin" => serde_json::json!({"id":id}),
-            "/_connect/v1/chunk" => serde_json::json!({"id":id,
+            "/auth/_connect/v1/begin" => serde_json::json!({"id":id}),
+            "/auth/_connect/v1/chunk" => serde_json::json!({"id":id,
                 "index":request.headers["x-connect-index"].to_str().unwrap().parse::<usize>().unwrap()}),
-            "/_connect/v1/execute" => serde_json::json!({"id":id,"status":401,
+            "/auth/_connect/v1/execute" => serde_json::json!({"id":id,"status":401,
                 "body": URL_SAFE_NO_PAD.encode(br#"{"errcode":"M_UNAUTHORIZED"}"#),
-                "headers":{"content-type":"application/json", "set-cookie":"never-forward"}}),
+                "headers":{"content-type":"application/json", "etag":"\"next\"", "location":"/auth/continue", "set-cookie":"never-forward"}}),
             _ => serde_json::json!({"id":id}),
         };
         ResponseTemplate::new(200).insert_header("X-Connect-Id", id).set_body_json(payload)
@@ -337,6 +354,7 @@ mod tests {
             .uri("https://connect.tich.app/_matrix/media/v3/upload?filename=test.bin")
             .header("authorization", "Bearer test-only")
             .header("content-type", "application/octet-stream")
+            .header("if-none-match", "\"current\"")
             .body(body.clone())
             .unwrap();
         let response = send_to(
@@ -349,6 +367,8 @@ mod tests {
         .unwrap();
         assert_eq!(response.status(), 401);
         assert_eq!(response.headers()["content-type"], "application/json");
+        assert_eq!(response.headers()["etag"], "\"next\"");
+        assert_eq!(response.headers()["location"], "/auth/continue");
         assert!(!response.headers().contains_key("set-cookie"));
         let requests = server.received_requests().await.unwrap();
         let begin = requests.iter().find(|r| r.url.path().ends_with("/begin")).unwrap();
@@ -359,6 +379,7 @@ mod tests {
         assert_eq!(meta["method"], "POST");
         assert_eq!(meta["length"], body.len());
         assert_eq!(meta["headers"]["authorization"], "Bearer test-only");
+        assert_eq!(meta["headers"]["if-none-match"], "\"current\"");
         assert_eq!(meta["path"], "/_matrix/media/v3/upload?filename=test.bin");
         let chunks: BTreeMap<usize, Vec<u8>> = requests
             .iter()
@@ -377,6 +398,41 @@ mod tests {
             assert!(!packet.url.as_str().contains("test-only"));
             assert!(packet.body.is_empty());
         }
+    }
+
+    #[tokio::test]
+    async fn rendezvous_get_uses_connect_transport_and_preserves_conditionals() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).respond_with(reply).mount(&server).await;
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("https://connect.tich.app/_synapse/client/rendezvous/session")
+            .header("if-none-match", "\"etag-1\"")
+            .body(Bytes::new())
+            .unwrap();
+        let response = send_to(
+            &server.uri(),
+            &request,
+            Some(Duration::from_secs(5)),
+            SharedObservable::new(TransmissionProgress::default()),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status(), 401);
+        let requests = server.received_requests().await.unwrap();
+        assert!(
+            requests.iter().all(|request| request.url.path().starts_with("/auth/_connect/v1/"))
+        );
+        let begin = requests.iter().find(|r| r.url.path().ends_with("/begin")).unwrap();
+        let meta: serde_json::Value = serde_json::from_slice(
+            &URL_SAFE_NO_PAD.decode(begin.headers["x-connect-meta"].as_bytes()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(meta["method"], "GET");
+        assert_eq!(meta["path"], "/_synapse/client/rendezvous/session");
+        assert_eq!(meta["headers"]["if-none-match"], "\"etag-1\"");
     }
 
     #[tokio::test]
