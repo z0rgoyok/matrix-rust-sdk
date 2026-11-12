@@ -14,11 +14,15 @@
 
 //! HTTP client and helpers for making OAuth 2.0 requests.
 
+use bytes::Bytes;
+use eyeball::SharedObservable;
 use matrix_sdk_base::BoxFuture;
 use oauth2::{
     AsyncHttpClient, ErrorResponse, HttpClientError, HttpRequest, HttpResponse, RequestTokenError,
 };
 use oauth2_reqwest::ReqwestClient;
+
+use crate::http_client::TransmissionProgress;
 
 /// An HTTP client for making OAuth 2.0 requests.
 #[derive(Debug, Clone)]
@@ -54,6 +58,20 @@ impl<'c> AsyncHttpClient<'c> for OAuthHttpClient {
             } else {
                 request
             };
+
+            #[cfg(all(not(target_family = "wasm"), feature = "tich-connect-transport"))]
+            if crate::http_client::tich_connect::handles(&request.clone().map(Bytes::from)) {
+                let request_for_transport = request.map(Bytes::from);
+                let response = crate::http_client::tich_connect::send(
+                    &request_for_transport,
+                    None,
+                    SharedObservable::new(TransmissionProgress::default()),
+                )
+                .await
+                .map_err(|error| HttpClientError::Other(error.to_string()))?;
+                let (parts, body) = response.into_parts();
+                return Ok(http::Response::from_parts(parts, body.to_vec()));
+            }
 
             let response = self.inner.call(request).await?;
 
