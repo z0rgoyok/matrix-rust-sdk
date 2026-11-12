@@ -43,7 +43,7 @@ use crate::{HttpResult, config::RequestConfig, error::HttpError};
 #[cfg(not(target_family = "wasm"))]
 mod native;
 #[cfg(all(not(target_family = "wasm"), feature = "tich-connect-transport"))]
-mod tich_connect;
+pub(crate) mod tich_connect;
 #[cfg(target_family = "wasm")]
 mod wasm;
 

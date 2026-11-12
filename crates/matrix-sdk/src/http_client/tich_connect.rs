@@ -31,7 +31,7 @@ fn failure(message: &'static str) -> HttpError {
     HttpError::ConnectTransport(message)
 }
 
-pub(super) fn handles(request: &Request<Bytes>) -> bool {
+pub(crate) fn handles(request: &Request<Bytes>) -> bool {
     let uri = request.uri();
     let path = uri.path();
     let is_rendezvous = path.starts_with("/_synapse/client/rendezvous/");
@@ -190,7 +190,7 @@ impl Drop for Cleanup {
     }
 }
 
-pub(super) async fn send(
+pub(crate) async fn send(
     request: &Request<Bytes>,
     timeout: Option<Duration>,
     progress: SharedObservable<TransmissionProgress>,
